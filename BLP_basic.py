@@ -19,10 +19,10 @@ def f1_BLP(Y):
 def d_BLP(Y):
     S = Y['shares']
     nmarkets, nproducts = S.shape
-    d = np.zeros((nmarkets, nproducts, nproducts))
+    A2 = np.zeros((nmarkets, nproducts, nproducts))
     for t, St in enumerate(S):
-        d[t, :, :] = np.diag(St) - np.outer(St, St)
-    return d
+        A2[t, :, :] = np.diag(St) - np.outer(St, St)
+    return A2
 
 
 def t_BLP(Y, neps):

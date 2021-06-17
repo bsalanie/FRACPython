@@ -9,15 +9,14 @@ from BLP_basic import make_K_BLP
 
 
 class QLRCModel:
-    def __init__(self, f0, f1, K=None, d=None, t=None, f_infty=None, proj_instr=spla.lstsq):
-        self.f0, self.f1, self_proj_instr = f0, f1, proj_instr
+    def __init__(self, f0, f1, neps, K=None, d=None, t=None, make_K=None,
+                 f_infty=None, proj_instr=spla.lstsq):
+        self.f0, self.f1, self_proj_instr, self.neps = f0, f1, proj_instr, neps
         if K is None:
             self.K = None
-            if d is None:
-                bs_error_abort("If K is not given then d should be.")
-            if t is None:
-                bs_error_abort("If K is not given then t should be.")
-            self.d, self.t = d, t
+            if d is None or t is None or make_K is None:
+                bs_error_abort("If K is not given then d, t, and make_K should be.")
+            self.d, self.t, self.make_K = d, t, make_K
         else:
             self.K = K
         if f_infty is not None:
@@ -25,11 +24,19 @@ class QLRCModel:
         else:
             self.f_infty = None
 
+    def make_K(self):
+        Y = self.Y
+        A2 = self.d(Y)
+        A33 = self.t(Y, self.neps)
+        nproducts = Y['X'].shape[1]
+        for j in range(nproducts):
+            pass
+
 
     def take_data(self, Y, covars='diag'):
         self.Y = Y
         if self.K is None:
-            self.K = make_K_BLP(Y['X'], Y['shares'], covars)
+            self.K = self.make_K(Y, self.d, self.t, self.neps)
 
 
     def estimate_2SLS(self, Y, Z):
