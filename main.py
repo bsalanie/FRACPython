@@ -1,23 +1,13 @@
 """ estimates via 2SLS and corrected 2SLS """
-
+import numpy as np
 from QLRC import QLRCModel
 
-def f0():
-    pass
-
-def f1():
-    pass
-
-def f2():
-    pass
-
-def f_infty():
-    pass
+from BLP_basic import f0_BLP, f1_BLP, K_BLP_diag, f_infty_BLP, d_BLP, t_BLP
 
 
 
 if __name__ == "__main__":
-    model = QLRCModel(f0, f1, f2)
+    model = QLRCModel(f0_BLP, f1_BLP, d=d_BLP, t=t_BLP, K=K_BLP_diag)
     model.estimate()
     model.simulate(f_infty)
     model.corrected_estimate()
