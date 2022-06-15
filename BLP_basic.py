@@ -1,114 +1,21 @@
 import numpy as np
-import numpy.linalg as npla
-from typing import Tuple
-import sys
-
-from utils import print_stars, bs_error_abort, npmaxabs
 
 
-def f0_BLP(data_mkt):
-    S = data_mkt.S
-    S0 = 1.0 - np.sum(S, 1)
-    return np.log(S / S0.reshape((-1, 1)))
-
-
-def f1_BLP(data_mkt):
-    return data_mkt.X
-
-
-def d_BLP(data_mkt):
-    S = data_mkt.S
-    A2 = np.diag(S) - np.outer(S, S)
-    return A2
-
-
-def t_BLP(data_mkt):
-    S, X = data_mkt.S, data_mkt.X
-    nproducts, neps = X.shape
-    A33 = np.zeros((nproducts, neps))
-    eS_X = np.sum(X* S.reshape((-1,1)), 1)
-    Xhat = X - eS_X
-    # fix below
-    eS_XX = np.zeros((neps, neps))
-    for ieps in range(neps):
-        XeS = X[:, ieps]*S
-        eS_XX[ieps, :] = np.sum(X* XeS.reshape((-1,1)), 1)
-    A = np.outer(eS_X, eS_X) - eS_XX
-    for j in range(nproducts):
-        Xhat_j = Xhat[j, :]
-        A33[j, :] = S[j]*(np.outer(Xhat_j, Xhat_j) - A)
-    return A33
-
-
-def make_K_BLP(X: np.array, shares: np.array, covars: str = 'diag') -> np.array:
-    """
-    for Salanie-Wolak TSLS: 2nd order artificial regressors for a vector or matrix `X` on one market
-
-    :param np.array X: array `(nproducts)` or `(nproducts, nx)`
-
-    :param np.array shares: array `(nproducts)`
-
-    :param str covars: restrictions on variance-covariance of random coefficients
-
-      * 'diag': diagonal only
-      * 'all': all terms
-
-    :return: the  `K` regressors, an array `(nproducts)` or  `(nproducts, nx)` or `(nproducts, nx*(nx+1)/2)`
-    """
-    if X.ndim == 1:
-        assert X.size == shares.size, "if X is a vector, X and shares should have the same size"
-        eS_X = np.dot(shares, X)
-        djm = eS_X - X / 2.0
-        return -djm * X
-    elif X.ndim == 2:
-        assert X.shape[0] == shares.size, "if X is a matrix, X and shares should have the same number of rows"
-        eS_X = X.T @ shares
-        djm = X / 2.0 - eS_X
-        if covars == 'diag':
-            return djm * X
-        elif covars == 'all':
-            nproducts, nx = X.shape
-            nx12 = (nx * (nx + 1)) / 2
-            K = np.array((nproducts, nx12))
-            i = 0
-            for ix in range(nx):
-                K[:, i] = djm[:, ix] * X[:, ix]
-                i += 1
-                for ix2 in range(ix + 1, nx):
-                    K[:, i] = djm[:, ix] * X[:, ix2] + djm[:, ix2] * X[:, ix]
-                    i += 1
-            return K
-        else:
-            bs_error_abort(f"covars cannot be {covars}!")
-    else:
-        bs_error_abort("X must be a vector or matrix")
-
-
-def K_BLP_diag(Y):
-    return make_K_BLP(Y['X'], Y['shares'], covars='diag')
-
-
-def f_infty_BLP(Y, Sigma):
-    pass
-
-
-
-
-def simulated_shares(utils: np.array) -> np.array:
+def simulated_shares_(utils: np.ndarray) -> np.ndarray:
     """
     return simulated shares for given simulated utilities
 
-    :param np.array utils: array `(nproducts, ndraws)`
+    :param  utils: array `(nproducts, ndraws)`
 
     :return: simulated shares `(nproducts, ndraws)`
     """
     shares = np.exp(utils)
     denom = 1.0 + np.sum(shares, 0)
-    shares = shares / denom
-    return shares
+    return shares / denom
 
 
-def simulated_mean_shares(utils: np.array) -> np.array:
+
+def simulated_mean_shares_(utils: np.array) -> np.array:
     """
     return simulated mean shares for given simulated utilities
 
@@ -116,101 +23,129 @@ def simulated_mean_shares(utils: np.array) -> np.array:
 
     :return: np.array simulated mean shares: array `(nproducts)`
     """
-    return np.mean(simulated_shares(utils), 1)
+    return np.mean(simulated_shares_(utils), 1)
 
 
-def berry_core(shares: np.array, mean_u: np.array, X2: np.array,
-               Sigma: np.array, tol: float = 1e-9,
-               maxiter: int = 10000, ndraws: int = 10000, verbose: bool = False) -> Tuple[np.array, bool]:
+def A_star_BLP(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
     """
-    contraction to invert for product effects :math:`\\xi` from market shares
-
-    :param np.array shares: `nproducts` vector of observed market shares
-
-    :param np.array mean_u: `(nproducts)` vector of mean utilities
-
-    :param np.array X2: `(nproducts, nx2)` matrix of nonlinear covariates
-
-    :param np.array Sigma: `(nx2, nx2)` variance-covariance matrix of random coefficients on `X2`, \
-    or `(nx2)` if diagonal
-
-    :param float tol: tolerance
-
-    :param int maxiter: max iterations
-
-    :param int ndraws: number of draws for simulation
-
-    :params bool verbose: print stuff if `True`
-
-    :return: `(nproducts)` vector of :math:`\\xi` values, and return code 0 if OK
+    computes the `n_products` equations on a given market
+    :param a: should be `(n_products,n_Y)`
+    :param b: should be `n_products`
+    :param c: should be `n_products` (TODO: `n_random_coeffs`)
+    :param args: a list `[n_products]`
+    :return: a vector `n_products`
     """
-    nproducts, nx2 = X2.shape
-    assert shares.size == nproducts, "should have as many shares as rows in X2"
-    assert mean_u.size == nproducts, "should have as many mean utilities as rows in X2"
-
-    if Sigma.ndim == 1 and Sigma.size == nx2:
-        assert np.min(Sigma) >= 0.0, "berry_core: all elements of the diagonal Sigma should be positive or 0"
-        Xsig = X2 * np.sqrt(Sigma)
-    elif Sigma.ndim == 2 and Sigma.shape == (nx2, nx2):
-        L = npla.cholesky(Sigma)
-        Xsig = X2 @ L
-    else:
-        print_stars("berry_core: Sigma should be (nx2, nx2) or (nx2)")
-        sys.exit()
-
-    sum_shares = shares.sum()
-    market_zero_share = 1.0 - sum_shares
-
-    xi = np.log(shares / market_zero_share) - mean_u
-    max_err = np.Inf
-    retcode = 0
-    iter = 0
-    eps = np.random.normal(size=(nx2, ndraws))
-    while max_err > tol:
-        utils = (Xsig @ eps) + (mean_u + xi).reshape((-1, 1))
-        shares_sim = simulated_mean_shares(utils)
-        err_shares = shares - shares_sim
-        max_err = npmaxabs(err_shares)
-        if verbose and iter % 100 == 0:
-            print(f"berry_core: error {max_err} after {iter} iterations")
-        iter += 1
-        if iter > maxiter:
-            retcode = 1
-            break
-        xi += (np.log(shares) - np.log(shares_sim))
-    if verbose:
-        print_stars(f"berry_core: error {max_err} after {iter} iterations")
-    return xi, retcode
+    n_products = a.shape[0]
+    observed_shares = np.diag(a[:, :n_products])
+    shares = np.exp(b+c)
+    denom = 1.0 + np.sum(shares)
+    return (observed_shares - shares / denom)
 
 
-def berry_normal_diagonal(shares: np.array, X1: np.array, X2: np.array, beta: np.array,
-                          sigmas: np.array, tol: float = 1e-9,
-                          maxiter: int = 10000, ndraws: int = 10000) -> Tuple[np.array, bool]:
+def f0_BLP(Y: np.ndarray, args: list):
     """
-    contraction to invert for product effects :math:`\\xi` from market shares in a normal model \
-    with a diagonal variance-covariance matrix and no micromoments
-
-    :param np.array shares: `nproducts` vector of observed market shares
-
-    :param np.array X1: `(nproducts, nx1)` matrix of linear covariates
-
-    :param np.array X2: `(nproducts, nx2)` matrix of nonlinear covariates
-
-    :param np.array beta: `(nx1)` vector of mean coefficients on `X1`
-
-    :param np.array sigmas: `(nx2)` vector of standard errors of random coefficients on `X2`
-
-    :param float tol: tolerance
-
-    :param int maxiter: max iterations
-
-    :param int ndraws: number of draws for simulation
-
-    :return: `(nproducts)` vector of :math:`\\xi` values, and return code 0 if OK
+    computes the `n_products` values of `f_0` on a given market
+    :param Y: should be `(n_products,n_Y)`
+    :param args: a list `[n_products]`
+    :return: a vector `n_products`
     """
-    nx1 = X1.shape[1]
-    assert beta.size == nx1, f"berry_inversion:  beta should {nx1} elements"
-    mean_utils = X1 @ beta
-    Sigma = np.diag(sigmas * sigmas)
-    return berry_core(shares, mean_utils, X2, Sigma, tol=tol,
-                      maxiter=maxiter, ndraws=ndraws)
+    n_products = args[0]
+    S = np.diag(Y[:, :n_products])
+    S0 = 1.0 - np.sum(S)
+    return np.log(S / S0)
+
+
+def f1_BLP(Y: np.ndarray, args: list):
+    """
+    computes the `n_products` values of `f_1` on a given market
+    :param Y: should be `(n_products,n_Y)`
+    :param args: a list `[n_products]`
+    :return: a vector `n_products`
+    """
+    n_products = args[0]
+    X = Y[:, n_products:]
+    return X
+
+
+def A2_BLP(Y: np.ndarray, args: list):
+    """
+    computes the derivative of :math:`A^\\ast` wrt `b` on a given market
+    :param Y: should be `(n_products,n_Y)`
+    :param args: a list `[n_products]`
+    :return: a matrix `(n_products, n_products)`
+
+    TODO: extend to `n_random_coeffs` and non-diagonal
+    """
+    n_products = args[0]
+    observed_shares = np.diag(Y[:, :n_products])
+    A_prime_2 = np.diag(observed_shares) - np.outer(observed_shares, observed_shares)
+    return A_prime_2
+
+
+def A33_BLP(Y: np.ndarray, args: list):
+    """
+    computes the second derivative of :math:`A^\\ast` wrt `c` on a given market
+    :param Y: should be `(n_products,n_Y)`
+    :param args: a list `[n_products]`
+    :return: a matrix `(n_products, n_products)`
+
+    TODO: extend to `n_random_coeffs` and non-diagonal
+    """
+    n_products = args[0]
+    observed_shares = np.diag(Y[:, :n_products])
+    X = Y[:, n_products:]
+    eS_X = np.sum(X * observed_shares.reshape((-1, 1)), 1)
+    Xhat = X - eS_X.reshape((-1,1))
+    eS_XX = np.sum(X * X * observed_shares.reshape((-1, 1)), 1)
+    A33 = Xhat* Xhat + (eS_X*eS_X - eS_XX).reshape((-1,1))
+    return A33
+
+#
+# def make_K_BLP_direct_(X: np.array, S: np.array,
+#                covars: str = 'diag') -> np.array:
+#     """
+#     for Salanie-Wolak TSLS: 2nd order artificial regressors for a vector or matrix `X` on one market
+#
+#     :param np.array X: array `(nproducts)` or `(nproducts, nx)`
+#
+#     :param np.array S: array `(nproducts)`
+#
+#     :param str covars: restrictions on variance-covariance of random coefficients
+#
+#       * 'diag': diagonal only
+#       * 'all': all terms
+#
+#     :return: the `K` regressors, an array `(nproducts)` or  `(nproducts, nx)` or `(nproducts, nx*(nx+1)/2)`
+#     """
+#     if X.ndim == 1:
+#         assert X.size == S.size, "if X is a vector, X and shares should have the same size"
+#         eS_X = np.dot(S, X)
+#         djm = eS_X - X / 2.0
+#         return -djm * X
+#     elif X.ndim == 2:
+#         assert X.shape[0] == S.size, "if X is a matrix, X and shares should have the same number of rows"
+#         eS_X = X.T @ S
+#         djm = X / 2.0 - eS_X
+#         if covars == 'diag':
+#             return djm * X
+#         elif covars == 'all':
+#             nproducts, nx = X.shape
+#             nx12 = (nx * (nx + 1)) / 2
+#             K = np.array((nproducts, nx12))
+#             i = 0
+#             for ix in range(nx):
+#                 K[:, i] = djm[:, ix] * X[:, ix]
+#                 i += 1
+#                 for ix2 in range(ix + 1, nx):
+#                     K[:, i] = djm[:, ix] * X[:, ix2] + djm[:, ix2] * X[:, ix]
+#                     i += 1
+#             return K
+#         else:
+#             bs_error_abort(f"covars cannot be {covars}!")
+#     else:
+#         bs_error_abort("X must be a vector or matrix")
+#
+
+
+def f_infty_BLP(Y: np.ndarray, Sigma: np.ndarray):
+    pass

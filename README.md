@@ -3,7 +3,7 @@
 Python implementation of the Salanie-Wolak  FRAC method to estimate  quasi-linear random coefficients models.
 
 ### inputs
-The model must have the form  $E_\varepsilon A^\ast(Y, \eta + f_1(Y)\beta, \varepsilon)=0, where 
+The model must have the form  $E_\varepsilon A^\ast(Y, \eta + f_1(Y)\beta, \varepsilon)=0$, where 
 we assume that
 * $\eta$ and $A^\ast$ have the same dimension
 * $E(\eta \vert Z)=0$ 
