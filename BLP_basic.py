@@ -6,42 +6,37 @@ import sys
 from utils import print_stars, bs_error_abort, npmaxabs
 
 
-def f0_BLP(Y):
-    S = Y['shares']
+def f0_BLP(data_mkt):
+    S = data_mkt.S
     S0 = 1.0 - np.sum(S, 1)
     return np.log(S / S0.reshape((-1, 1)))
 
 
-def f1_BLP(Y):
-    return Y['X']
+def f1_BLP(data_mkt):
+    return data_mkt.X
 
 
-def d_BLP(Y):
-    S = Y['shares']
-    nmarkets, nproducts = S.shape
-    A2 = np.zeros((nmarkets, nproducts, nproducts))
-    for t, St in enumerate(S):
-        A2[t, :, :] = np.diag(St) - np.outer(St, St)
+def d_BLP(data_mkt):
+    S = data_mkt.S
+    A2 = np.diag(S) - np.outer(S, S)
     return A2
 
 
-def t_BLP(Y, neps):
-    S = Y['shares']
-    nmarkets, nproducts = S.shape
-    A33 = np.zeros((nmarkets, nproducts, neps, neps))
-    X = Y['X']
-    for t in range(nmarkets):
-        St, Xt = S[t, :], X[t, :, :]
-        eS_Xt = np.sum(Xt* St.reshape((-1,1)), 1)
-        Xthat = Xt - eS_Xt
-        eS_XXt = np.zeros((neps, neps))
-        for ieps in range(neps):
-            XteS = Xt[:, ieps]*St
-            eS_XXt[ieps, :] = np.sum(Xt* XteS.reshape((-1,1)), 1)
-        At = np.outer(eS_Xt, eS_Xt) - eS_XXt
-        for j in range(nproducts):
-            Xthat_j = Xthat[j, :]
-            A33[t, j, :, :] = St[j]*(np.outer(Xthat_j, Xthat_j) - At)
+def t_BLP(data_mkt):
+    S, X = data_mkt.S, data_mkt.X
+    nproducts, neps = X.shape
+    A33 = np.zeros((nproducts, neps))
+    eS_X = np.sum(X* S.reshape((-1,1)), 1)
+    Xhat = X - eS_X
+    # fix below
+    eS_XX = np.zeros((neps, neps))
+    for ieps in range(neps):
+        XeS = X[:, ieps]*S
+        eS_XX[ieps, :] = np.sum(X* XeS.reshape((-1,1)), 1)
+    A = np.outer(eS_X, eS_X) - eS_XX
+    for j in range(nproducts):
+        Xhat_j = Xhat[j, :]
+        A33[j, :] = S[j]*(np.outer(Xhat_j, Xhat_j) - A)
     return A33
 
 
