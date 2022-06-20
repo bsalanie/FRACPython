@@ -184,7 +184,7 @@ def flexible_reg(Y: np.array, X: np.array, mode: str = 'NP',
 
     * 'NP': non parametric
     * '1': linear
-    * '2': quadratic
+    * '2': quadratic, etc
 
     :param str var_types: [for 'NP' only]  specify types of all `X` variables if not all of them are continuous; \
      one character per variable

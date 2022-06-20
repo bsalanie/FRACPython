@@ -7,7 +7,7 @@ from QLRC import QLRCModel, least_squares_proj
 from BLP_basic import f0_BLP, f1_BLP, A_star_BLP, A2_BLP, A33_BLP, K_BLP,\
     f_infty_BLP, simulated_mean_shares_
 
-from stats_utils import reg_nonpar_fit, flexible_reg
+from stats_utils import flexible_reg
 
 if __name__ == "__main__":
 
@@ -73,8 +73,7 @@ if __name__ == "__main__":
     for ix in range(nx-1):
         Kr[:, ix] = K[:, :, ix].reshape((n_points))
     for ix in range(nx-1):
-        # Kfit[:, ix]  = reg_nonpar_fit(Kr[:, ix], Xr)
-        Kfit[:, ix]  = flexible_reg(Kr[:, ix], Xr,  mode='2')
+        Kfit[:, ix]  = flexible_reg(Kr[:, ix], Xr,  mode='3')
 
     rhs = np.concatenate((Xr, Kfit), axis=1)
     coeffs, _, _, _ = spla.lstsq(rhs, f0r)
