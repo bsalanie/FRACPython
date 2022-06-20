@@ -14,7 +14,6 @@ def simulated_shares_(utils: np.ndarray) -> np.ndarray:
     return shares / denom
 
 
-
 def simulated_mean_shares_(utils: np.array) -> np.array:
     """
     return simulated mean shares for given simulated utilities
@@ -37,7 +36,7 @@ def A_star_BLP(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
     """
     n_products = a.shape[0]
     observed_shares = np.diag(a[:, :n_products])
-    shares = np.exp(b+c)
+    shares = np.exp(b + c)
     denom = 1.0 + np.sum(shares)
     return (observed_shares - shares / denom)
 
@@ -50,7 +49,7 @@ def f0_BLP(Y: np.ndarray, args: list):
     :return: a vector `n_products`
     """
     n_products = args[0]
-    S = np.diag(Y[:, :n_products])
+    S = Y[0, :n_products]
     S0 = 1.0 - np.sum(S)
     return np.log(S / S0)
 
@@ -73,11 +72,9 @@ def A2_BLP(Y: np.ndarray, args: list):
     :param Y: should be `(n_products,n_Y)`
     :param args: a list `[n_products]`
     :return: a matrix `(n_products, n_products)`
-
-    TODO: extend to `n_random_coeffs` and non-diagonal
     """
     n_products = args[0]
-    observed_shares = np.diag(Y[:, :n_products])
+    observed_shares = Y[0, :n_products]
     A_prime_2 = np.diag(observed_shares) - np.outer(observed_shares, observed_shares)
     return A_prime_2
 
@@ -92,13 +89,37 @@ def A33_BLP(Y: np.ndarray, args: list):
     TODO: extend to `n_random_coeffs` and non-diagonal
     """
     n_products = args[0]
-    observed_shares = np.diag(Y[:, :n_products])
+    observed_shares = Y[0, :n_products]
     X = Y[:, n_products:]
-    eS_X = np.sum(X * observed_shares.reshape((-1, 1)), 1)
-    Xhat = X - eS_X.reshape((-1,1))
-    eS_XX = np.sum(X * X * observed_shares.reshape((-1, 1)), 1)
-    A33 = Xhat* Xhat + (eS_X*eS_X - eS_XX).reshape((-1,1))
+    eS_X = np.sum(X * observed_shares.reshape((-1, 1)), 0)
+    # Xhat = X - eS_X
+    XX = X * X
+    eS_XX = np.sum(XX * observed_shares.reshape((-1, 1)), 0)
+    # A33 = Xhat* Xhat + eS_X*eS_X - eS_XX
+    A33 = X * X - eS_XX + 2.0 * (eS_X) * (eS_X) - 2.0 * X * eS_X
+    A33 *= observed_shares.reshape((-1, 1))
+    # skip non-random constant
+    A33 = A33[:, 1:]
     return A33
+
+
+def K_BLP(Y: np.ndarray, args: list):
+    """
+    computes the articial regressors on a given market
+    :param Y: should be `(n_products,n_Y)`
+    :param args: a list `[n_products]`
+    :return: a matrix `(n_products, nx-1)`
+
+    TODO: extend to `n_random_coeffs` and non-diagonal
+    """
+    n_products = args[0]
+    observed_shares = Y[0, :n_products]
+    X = Y[:, n_products:]
+    eS_X = np.sum(X * observed_shares.reshape((-1, 1)), 0)
+    K = X * (X / 2.0 - eS_X)
+    # non-random constant
+    return K[:, 1:]
+
 
 #
 # def make_K_BLP_direct_(X: np.array, S: np.array,

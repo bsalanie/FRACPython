@@ -1,7 +1,6 @@
 """ defines a class for QLRC models """
 
 import numpy as np
-import numpy.linalg as npla
 import scipy.linalg as spla
 from typing import Callable, Optional
 
@@ -13,20 +12,20 @@ def QLRC_check_YZ_(Y, Z):
     n_observations, n_equations, n_Y = test_tensor(Y, 3, "QLRCModel init")
     no_z, ne_z, n_Z = test_tensor(Z, 3, "QLRCModel init")
     if no_z != n_observations:
-        bs_error_abort(f"Z has {no_z} first dimension  but {n_observations=}")
+        bs_error_abort(f"Z has {no_z} elements in its first dimension  but {n_observations=}")
     if ne_z != n_equations:
-        bs_error_abort(f"Z has {ne_z} second dimension  but {n_equations=}")
+        bs_error_abort(f"Z has {ne_z} elements in its second dimension  but {n_equations=}")
     return Y, Z, n_observations, n_equations, n_Y, n_Z
 
 
 def check_K_(K, n_observations, n_equations, n_Sigma):
     no_K, ne_K, nr_K = test_tensor(K, 3, "QLRCModel init")
     if no_K != n_observations:
-        bs_error_abort(f"K has {no_K} first dimension but {n_observations=}")
+        bs_error_abort(f"K has {no_K} elements in its first dimension but {n_observations=}")
     if ne_K != n_equations:
-        bs_error_abort(f"K has {ne_K} second dimension but {n_equations=}")
+        bs_error_abort(f"K has {ne_K} elements in its second dimension but {n_equations=}")
     if nr_K != n_Sigma:
-        bs_error_abort(f"K has {ne_K} second dimension but {n_Sigma=}")
+        bs_error_abort(f"K has {ne_K} elements in its second dimension but {n_Sigma=}")
     return K
 
 
@@ -48,15 +47,24 @@ def check_f_1_(f_1, n_observations, n_equations):
     return f_1, nb_1
 
 
-def least_squares_proj(Z: np.ndarray, f: np.ndarray):
-    coeffs, _, _, _ = spla.lstsq(Z, f)
-    return Z @ coeffs
+def least_squares_proj(Z: np.ndarray, f: np.ndarray, max_degree: int = 2):
+    n_points, n_instruments = Z.shape
+    n2 = int(n_instruments * (n_instruments + 1) / 2)
+    Z2 = np.zeros((n_points, n2))
+    i2 = 0
+    for i in range(n_instruments):
+        Zi = Z[:, i]
+        for j in range(i, n_instruments):
+            Z2[:, i2] = Zi * Z[:, j]
+    Z_interacted = np.concatenate((Z, Z2), axis=1)
+    coeffs, _, _, _ = spla.lstsq(Z_interacted, f)
+    return Z_interacted @ coeffs
 
 
 class QLRCModel:
     def __init__(self, Y: np.ndarray, A_star: Callable,
                  f_1: Callable | np.ndarray,
-                 n_betas : int,
+                 n_betas: int,
                  n_Sigma: int,
                  Z: np.ndarray,
                  f_0: Optional[Callable | np.ndarray] = None,
@@ -113,17 +121,18 @@ class QLRCModel:
             K_shape = test_matrix(K_test, "QLRCModel init")
             if K_shape != (self.n_equations, self.n_Sigma):
                 bs_error_abort(f"K should return a {(self.n_equations, self.n_Sigma)} matrix, not a {K_shape} one")
-            f1_vals = np.zeros((n_obs, self.n_equations, n_Sigma))
+            K_vals = np.zeros((n_obs, self.n_equations, n_Sigma))
             for t in range(n_obs):
-                f1_vals[t, :] = f_1(Y[t, :, :], args)
-            self.f_1 = f1_vals
+                K_vals[t, :] = K(Y[t, :, :], args)
+            self.K = K_vals
         else:
             bs_error_abort("K should be an array, a Callable, or None.")
+        self.estimated = False
 
     def make_K(self):
         args, Y = self.args, self.Y
         n_obs, n_eqs, n_Sigma = self.n_observations, self.n_equations, \
-                                        self.n_Sigma
+                                self.n_Sigma
         A2 = args[1]
         A33 = args[2]
         K = np.zeros((n_obs, n_eqs, n_Sigma))
@@ -131,27 +140,31 @@ class QLRCModel:
             Y_t = Y[t, :, :]
             A2_vals = A2(Y_t, args)
             A33_vals = A33(Y_t, args)
-            K[t, :, :] = npla.solve(A2_vals, A33_vals) / 2.0
+            K[t, :, :] = spla.solve(A2_vals, A33_vals) / 2.0
+            print(f"{K[t,:,:]=}")
         return K
 
     def fit(self):
         f0_vals, f1_vals, K_vals, Z = self.f_0, self.f_1, self.K, self.Z
         nb, ns, nz = self.n_betas, self.n_Sigma, self.n_Z
-        n_points = self.n_observations*self.n_equations
-        f0r = f0_vals.reshape(n_points)
+        n_points = self.n_observations * self.n_equations
         Zr = np.zeros((n_points, nz))
         for i_z in range(nz):
             Zr[:, i_z] = Z[:, :, i_z].reshape(n_points)
+        f0r = f0_vals.reshape(n_points)
+        f0r = self.projection_instruments(Zr, f0r)
         f1r = np.zeros((n_points, nb))
         for i_b in range(nb):
             f1b = f1_vals[:, :, i_b].reshape(n_points)
             f1r[:, i_b] = self.projection_instruments(Zr, f1b)
         Kr = np.zeros((n_points, ns))
         for i_s in range(ns):
-            Kr[:, i_s] = self.projection_instruments(Zr, K_vals[:, :, i_s].reshape(n_points))
-        optimal_Z = np.concatenate((f1r, Kr), axis=1)
-        estimates, _, _, _ = spla.lstsq(optimal_Z, f0r)
-        self.estimated_betas, self.estimated_Sigma= estimates[:nb], estimates[nb:]
+            Ks = K_vals[:, :, i_s].reshape(n_points)
+            Kr[:, i_s] = self.projection_instruments(Zr, Ks)
+        optimal_regressors = np.concatenate((f1r, Kr), axis=1)
+        estimates, _, _, _ = spla.lstsq(optimal_regressors, f0r)
+        self.estimated_betas, self.estimated_Sigma = estimates[:nb], estimates[nb:]
+        self.estimated = True
         return estimates
 
     def predict(self, f_infty):
@@ -162,9 +175,10 @@ class QLRCModel:
 
     def print(self):
         print(f"The model has {self.n_observations} observations and {self.n_equations} equations")
-        print(f"   there are  {self.n_betas} covariates and {self.n_Sigma} artifical regressors")
-        print(f"   the estimates for beta are {self.estimated_betas}")
-        print(f"     and those for Sigma are {self.estimated_Sigma}")
+        print(f"   there are  {self.n_betas} covariates and {self.n_Sigma} artificial regressors")
+        if self.estimated:
+            print(f"   the estimates for beta are {self.estimated_betas}")
+            print(f"     and those for Sigma are {self.estimated_Sigma}")
 
 # from BLP_basic import make_K_BLP
 #
