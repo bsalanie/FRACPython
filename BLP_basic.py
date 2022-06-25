@@ -1,5 +1,6 @@
 import numpy as np
 
+from bsutils import bs_error_abort
 
 def simulated_shares_(utils: np.ndarray) -> np.ndarray:
     """
@@ -170,3 +171,73 @@ def K_BLP(Y: np.ndarray, args: list):
 
 def f_infty_BLP(Y: np.ndarray, Sigma: np.ndarray):
     pass
+
+
+def _make_BLP_instruments(z: np.ndarray, max_degree: int=3):
+    """
+    creates instruments on one market
+    we use as instruments for product j:
+    * its instruments and their squares etc
+    * the market means of the above
+
+    :param z: the (J,m) matrix of instruments
+
+    :return: a (J, 4+2*m) matrix
+    """
+    if max_degree > 4:
+        bs_error_abort(f"max_degree is {max_degree}; it cannot exceed 4.")
+    n_products, n_z = z.shape
+    n_instr = 4 + 3*n_z
+    instr = np.zeros((n_products, n_instr))
+    mean_z = np.mean(z, axis=1)
+    z2 = z * z
+    mean_z2 = np.mean(z2, axis=1)
+    market_means_z = np.repeat(mean_z, n_products)
+    market_means_z2 = np.repeat(mean_z2, n_products)
+    instr[:, 0] = 1.0
+    instr[:, 1] = market_means_z
+    instr[:, 2] = market_means_z * market_means_z
+    instr[:, 3] = market_means_z2
+    for j in range(n_products):
+        z_j = z[:, j]
+        zj_2 = z_j * z_j
+        instr[j, 9:(9 + n_z)] = z_j
+        instr[j, (9 + n_z):(9 + 2 * n_z)] = zj_2
+        instr[j, (9 + 2 * n_z):(9 + 3 * n_z)] = z_j * mean_z
+    if max_degree >= 3:
+        z3 = z2 * z
+        mean_z3 = np.mean(z3, axis=1)
+        market_means_z3 = np.repeat(mean_z3, n_products)
+        instr[:, 4] = market_means_z3
+        instr[:, 5] = market_means_z * market_means_z2
+        for j in range(n_products):
+            z_j = z[:, j]
+            zj_2 = z_j * z_j
+            zj_3 = zj_2 * z_j
+            instr[j, (9 + 4 * n_z):(9 + 5 * n_z)] \
+                = z_j * mean_z2
+            instr[j, (9 + 5 * n_z):(9 + 6 * n_z)]  \
+                = z_j * mean_z * mean_z
+            instr[j, (9 + 6 * n_z):(9 + 7 * n_z)] = zj_3
+    if max_degree == 4:
+        z4 = z2 * z2
+        mean_z4 = np.mean(z4, axis=1)
+        market_means_z4 = np.repeat(mean_z4, n_products)
+        instr[:, 6] = market_means_z2 * market_means_z2
+        instr[:, 7] = market_means_z * market_means_z3
+        instr[:, 8] = market_means_z4
+        for j in range(n_products):
+            z_j = z[:, j]
+            zj_2 = z_j * z_j
+            zj_3 = zj_2 * z_j
+            zj_4 = zj_2 * zj_2
+            instr[j, (9 + 3 * n_z):(9 + 4 * n_z)] \
+                = zj_2 * mean_z2
+            instr[j, (9 + 7 * n_z):(9 + 8 * n_z)] = zj_4
+            instr[j, (9 + 8 * n_z):(9 + 9 * n_z)] = zj_3 * mean_z
+            instr[j, (9 + 9 * n_z):(9 + 10 * n_z)]  \
+                = zj_2 * mean_z * mean_z
+            instr[j, (9 + 10 * n_z):(9 + 11 * n_z)] \
+                = zj_2 * mean_z2
+    return instr
+

@@ -5,11 +5,14 @@ import scipy.linalg as spla
 from QLRC import QLRCModel, least_squares_proj
 
 from BLP_basic import f0_BLP, f1_BLP, A_star_BLP, A2_BLP, A33_BLP, K_BLP,\
-    f_infty_BLP, simulated_mean_shares_
+    f_infty_BLP
 
-from stats_utils import flexible_reg
+from blp_utils import simulated_mean_shares
+from bsstats import flexible_reg
 
 if __name__ == "__main__":
+
+    check_by_hand = True
 
     n_markets = 100
     n_products = 10
@@ -33,11 +36,12 @@ if __name__ == "__main__":
         for ix in range(1, nx):
             Xsig_eps += (np.outer(X_t[:, ix], sigmas[ix-1] * eps_t[ix-1, :]))
         utils = Xsig_eps + (X_t @ beta_bar + xi_t).reshape((-1, 1))
-        shares = simulated_mean_shares_(utils)
+        shares = simulated_mean_shares(utils)
         # Y[t, i, :n_products] is the vector of market shares
         Y[t, :, :n_products] = np.tile(shares, (n_products, 1))
         # Y[t, i, :n_products] is the vector of market shares
         Y[t, :, n_products:] = X_t
+        # also construct K for comparison
         for ix in range(nx):
             xtix = X_t[:, ix]
             eSix = xtix @ shares
@@ -60,24 +64,27 @@ if __name__ == "__main__":
 
     model.print()
 
-    n_points = n_markets * n_products
-    f_0 = np.zeros((n_markets, n_products))
-    for t in range(n_markets):
-        f_0[t, :] = f0_BLP(Y[t, :, :], [n_products])
-    f0r = f_0.reshape(n_points)
-    Xr = np.zeros((n_points, nx))
-    Kr = np.zeros((n_points, nx-1))
-    Kfit = np.zeros((n_points, nx-1))
-    for ix in range(nx):
-        Xr[:, ix] = X[:, :, ix].reshape((n_points))
-    for ix in range(nx-1):
-        Kr[:, ix] = K[:, :, ix].reshape((n_points))
-    for ix in range(nx-1):
-        Kfit[:, ix]  = flexible_reg(Kr[:, ix], Xr,  mode='3')
 
-    rhs = np.concatenate((Xr, Kfit), axis=1)
-    coeffs, _, _, _ = spla.lstsq(rhs, f0r)
-    print(coeffs)
+    if check_by_hand:
+        n_points = n_markets * n_products
+        f_0 = np.zeros((n_markets, n_products))
+        for t in range(n_markets):
+            f_0[t, :] = f0_BLP(Y[t, :, :], [n_products])
+        f0r = f_0.reshape(n_points)
+        Xr = np.zeros((n_points, nx))
+        Kr = np.zeros((n_points, nx-1))
+        Kfit = np.zeros((n_points, nx-1))
+        for ix in range(nx):
+            Xr[:, ix] = X[:, :, ix].reshape((n_points))
+        for ix in range(nx-1):
+            Kr[:, ix] = K[:, :, ix].reshape((n_points))
+        for ix in range(nx-1):
+            Kfit[:, ix]  = flexible_reg(Kr[:, ix], Xr,  mode='3')
+
+        rhs = np.concatenate((Xr, Kfit), axis=1)
+        coeffs, _, _, _ = spla.lstsq(rhs, f0r)
+        print(f"\n\n Checking estimates:\n")
+        print(coeffs)
 
 
 
