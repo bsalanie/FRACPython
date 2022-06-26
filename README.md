@@ -41,3 +41,28 @@ $$
 and re-runs the 2SLS regression.
 
 
+### solving for $f_0$ and $f_\infty$
+For $f_0$ we  have $A(f)=A^\ast(Y, f, 0)$ and $A^\prime(f)=A^\ast_2(Y, f,0)$.
+
+For $f_\infty$, given a parameter-free distribution $F$  for $v$, we draw $v^{(s)}, s=1,\ldots,S$ from $F$ and we compute
+$$
+A(f) =\frac{1}{S}\sum_{s=1}^S A^\ast(Y, f, Lv^{(s)})
+$$
+and 
+$$
+A^\prime(f) =\frac{1}{S}\sum_{s=1}^S A^\ast_2(Y, f, Lv^{(s)}).
+$$
+#### using `scipy`
+Or use `scipy.optimize.root(vfun, vx0, jac=True)` where `vfun` returns $A$ and $A^\prime$.
+
+#### or Newton
+
+We iterate Newton:
+
+* solve $A^\prime(f^{(k+1)}) d = -A(f^{(k)})$ 
+* make $f^{(k+1)}=f^{(k)}+d$.
+
+For $f_0$ we start from a reasonable value; for $f_\infty$ we start from , starting from $f^{(0)}=f_0(Y)-K\Sigma$.
+
+
+
