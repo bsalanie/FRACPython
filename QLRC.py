@@ -47,18 +47,9 @@ def check_f_1_(f_1, n_observations, n_equations):
     return f_1, nb_1
 
 
-def least_squares_proj(Z: np.ndarray, f: np.ndarray, max_degree: int = 2):
-    n_points, n_instruments = Z.shape
-    n2 = int(n_instruments * (n_instruments + 1) / 2)
-    Z2 = np.zeros((n_points, n2))
-    i2 = 0
-    for i in range(n_instruments):
-        Zi = Z[:, i]
-        for j in range(i, n_instruments):
-            Z2[:, i2] = Zi * Z[:, j]
-    Z_interacted = np.concatenate((Z, Z2), axis=1)
-    coeffs, _, _, _ = spla.lstsq(Z_interacted, f)
-    return Z_interacted @ coeffs
+def least_squares_proj(Z: np.ndarray, y: np.ndarray):
+    coeffs, _, _, _ = spla.lstsq(Z, y)
+    return Z @ coeffs
 
 
 class QLRCModel:
@@ -151,16 +142,16 @@ class QLRCModel:
         Zr = np.zeros((n_points, nz))
         for i_z in range(nz):
             Zr[:, i_z] = Z[:, :, i_z].reshape(n_points)
-        f0r = f0_vals.reshape(n_points)
-        f0r = self.projection_instruments(Zr, f0r)
-        f1r = np.zeros((n_points, nb))
+        f0v = f0_vals.reshape(n_points)
+        f0r = self.projection_instruments(Zr, f0v)
+        f1b = np.zeros((n_points, nb))
         for i_b in range(nb):
-            f1b = f1_vals[:, :, i_b].reshape(n_points)
-            f1r[:, i_b] = self.projection_instruments(Zr, f1b)
-        Kr = np.zeros((n_points, ns))
+            f1b[:, i_b] = f1_vals[:, :, i_b].reshape(n_points)
+        f1r = self.projection_instruments(Zr, f1b)
+        Ks = np.zeros((n_points, ns))
         for i_s in range(ns):
-            Ks = K_vals[:, :, i_s].reshape(n_points)
-            Kr[:, i_s] = self.projection_instruments(Zr, Ks)
+            Ks[:, i_s] = K_vals[:, :, i_s].reshape(n_points)
+        Kr = self.projection_instruments(Zr, Ks)
         optimal_regressors = np.concatenate((f1r, Kr), axis=1)
         estimates, _, _, _ = spla.lstsq(optimal_regressors, f0r)
         self.estimated_betas, self.estimated_Sigma = estimates[:nb], estimates[nb:]
@@ -179,65 +170,3 @@ class QLRCModel:
         if self.estimated:
             print(f"   the estimates for beta are {self.estimated_betas}")
             print(f"     and those for Sigma are {self.estimated_Sigma}")
-
-# from BLP_basic import make_K_BLP
-#
-# """
-# diagonal case, no micromoments, random coeff on each variable
-#
-# on each market we need:
-#  * a function f0 (S_1...S_J) -> [J]
-#  * a function f1 (Y) -> [J,p]
-#  * either:
-#     a function that returns a set of regressors K[j,p] from the data
-#     or d: A2 [J,J]
-#        t: A33[J,p]
-#        and we solve A2.K = A33/2
-#
-# then we need the data Y:
-#    [T, J] market shares S
-#    [T, J, p] covariates X
-#    {T, J, m] instruments Z
-#
-#
-# and a function estimate_2SLS that takes both and returns the estimates
-#
-# """
-#
-#
-#
-# @dataclass
-# class DataBLPOneMarket:
-#     S: np.ndarray
-#     X: np.ndarray
-#     Z: np.ndarray
-#
-#
-# @dataclass
-# class QLRCDataBLP:
-#     S: np.ndarray
-#     X: np.ndarray
-#     Z: np.ndarray
-#     n_markets: int = field(init=False)
-#     n_products: int = field(init=False)
-#     n_variables: int = field(init=False)
-#     n_instruments: int = field(init=False)
-#
-#     def __post_init__(self):
-#         if self.S.ndim != 2:
-#             bs_error_abort(f"S should be (T,J) not {self.S.shape}")
-#         n_markets, n_products = self.S.shape
-#         if self.X.ndim != 3:
-#             bs_error_abort(f"X should be (T,J,p) not {self.X.shape}")
-#         if self.X.shape[:2] != (n_markets, n_products):
-#             bs_error_abort(f"X is {self.X.shape} but S is {self.S.shape}")
-#         if self.Z.ndim != 3:
-#             bs_error_abort(f"Z should be (T,J,m) not {self.Z.shape}")
-#         if self.Z.shape[:2] != (n_markets, n_products):
-#             bs_error_abort(f"Z is {self.Z.shape} but S is {self.S.shape}")
-#         self.n_markets, self.n_products, self.n_variables = self.X.shape
-#         self.n_instruments = self.Z.shape[2]
-#
-#     def get_market(self, mkt):
-#         return DataBLPOneMarket(self.S[mkt, :], self.X[mkt, :, :], self.Z[mkt, :, :])
-#
